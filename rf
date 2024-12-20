@@ -1,0 +1,62 @@
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.preprocessing import StandardScaler
+
+filename = 'C:/Users/wdobr/Desktop/Projekt/featVec_HHFH.csv'
+data = pd.read_csv(filename, header=None)
+
+# Dane: n_samples wierszy, każdy ma 128 kolumn (4 wirniki * 2 osie * 16 pomiarów)
+X = data.values  # (n_samples, 128)
+
+# Przekształcamy do (n_samples, 16, 8) -> 16 pomiarów, 8 kolumn (4 wirniki * 2 osie)
+X_reshaped = X.reshape(X.shape[0], 16, 8)
+
+# Etykiety kolumn: 0 0 (engine1), 0 0 (engine2), 1 1 (engine3 uszkodzony), 0 0 (engine4)
+col_labels = np.array([0,0, 0,0, 1,1, 0,0])
+
+# X_combined jest już w formie (n_samples,16,8) i tak chcemy go użyć.
+X_combined = X_reshaped  # (n_samples,16,8)
+
+print("X_combined shape:", X_combined.shape)
+print("Column labels:", col_labels)
+print(X_combined)
+
+# RandomForest wymaga wejścia 2D, spłaszczamy cechy:
+# (n_samples, 16, 8) -> (n_samples, 16*8=128)
+X_final = X_combined.reshape(X_combined.shape[0], -1)  # (n_samples,128)
+
+# Tworzymy etykiety y jako powielenie col_labels dla każdej próbki,
+# co da (n_samples, 8) – problem wielowyjściowy (multi-output)
+y_final = np.tile(col_labels, (X_final.shape[0], 1))  # (n_samples, 8)
+
+print("X_final shape:", X_final.shape)  # (n_samples, 128)
+print("y_final shape:", y_final.shape)  # (n_samples, 8)
+
+# Podział na zbiór treningowy i testowy
+X_train, X_test, y_train, y_test = train_test_split(X_final, y_final, test_size=0.5, random_state=42)
+
+# Normalizacja
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+# Trenowanie modelu
+# RandomForestClassifier potrafi obsłużyć multi-output, gdy y jest w postaci (n_samples, n_outputs)
+rf = RandomForestClassifier(random_state=42)
+rf.fit(X_train, y_train)
+y_pred = rf.predict(X_test)
+
+# Ocena
+# Dla multi-output można sprawdzić każdą kolumnę osobno.
+accuracy_per_column = []
+for i in range(y_test.shape[1]):
+    acc = accuracy_score(y_test[:, i], y_pred[:, i])
+    accuracy_per_column.append(acc)
+    print(f"Kolumna {i}, Dokładność: {acc}")
+    print("Macierz pomyłek:\n", confusion_matrix(y_test[:, i], y_pred[:, i]))
+    print("Raport klasyfikacji:\n", classification_report(y_test[:, i], y_pred[:, i]))
+
+print("Dokładność per kolumna:", accuracy_per_column)
