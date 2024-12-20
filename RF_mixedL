@@ -1,0 +1,100 @@
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.preprocessing import StandardScaler
+filename = 'C:/Users/wdobr/Desktop/Projekt/featVec_HHHF.csv'
+data = pd.read_csv(filename, header=None)
+
+# Dane: n_samples wierszy, każdy 128 kolumn
+X = data.values  # (n_samples, 128)
+
+# Przekształcenie do (n_samples, 16, 8)
+X_reshaped = X.reshape(X.shape[0], 16, 8)
+
+# Oryginalny wzorzec etykiet kolumnowych (dany na stałe)
+col_labels = np.array([0,0, 0,0, 0,0, 1,1])
+
+# Spłaszczamy dane ponownie do postaci 2D (n_samples, 128) dla modelu
+X_final = X_reshaped.reshape(X_reshaped.shape[0], -1)
+
+# Powielenie etykiet dla wszystkich próbek (n_samples, 8)
+# Wcześniej to powodowało, że wszystkie próbki miały te same etykiety.
+# Teraz dodamy do tego krok różnicowania.
+y_final = np.tile(col_labels, (X_final.shape[0], 1))
+
+# Dodajmy sztuczne zróżnicowanie:
+# Załóżmy, że połowa próbek jest "odwrócona" pod względem etykiet,
+# tzn. 1 -> 0 i 0 -> 1. Robimy to tylko w ramach demonstracji.
+half = X_final.shape[0] // 2
+y_final[half:] = 1 - y_final[half:]
+
+print("X_final shape:", X_final.shape)  # (n_samples, 128)
+print("y_final shape:", y_final.shape)  # (n_samples, 8)
+
+# Podział na zbiór treningowy i testowy
+X_train, X_test, y_train, y_test = train_test_split(X_final, y_final, test_size=0.5, random_state=42)
+
+# Normalizacja
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+#WERSJA ZE ZMIENIANYMI PARAMETRAMI RF
+# Definiujemy siatkę parametrów do przeszukania
+param_grid = {
+    'n_estimators': [50, 100, 200],      # liczba drzew
+    'max_depth': [None, 10, 20, 30],     # maksymalna głębokość drzewa
+    'min_samples_split': [2, 5, 10],     # minimalna liczba próbek do podziału
+    'min_samples_leaf': [1, 2, 4],       # minimalna liczba próbek w liściu
+    'max_features': ['auto', 'sqrt']     # cechy wybierane do budowy drzew
+}
+
+rf = RandomForestClassifier(random_state=42)
+
+# GridSearchCV do przeszukiwania parametrów
+grid_search = GridSearchCV(estimator=rf,
+                           param_grid=param_grid,
+                           scoring='accuracy',  # ew. inna miara jakości
+                           cv=3,                # 3-krotna walidacja krzyżowa
+                           n_jobs=-1,           # równoległość
+                           verbose=2)
+
+grid_search.fit(X_train, y_train)
+
+print("Najlepsze parametry: ", grid_search.best_params_)
+print("Najlepszy wynik CV: ", grid_search.best_score_)
+
+# Trenujemy model z najlepszymi parametrami na pełnym zbiorze treningowym
+best_rf = grid_search.best_estimator_
+best_rf.fit(X_train, y_train)
+y_pred = best_rf.predict(X_test)
+
+# Ocena modelu
+accuracy_per_column = []
+for i in range(y_test.shape[1]):
+    acc = accuracy_score(y_test[:, i], y_pred[:, i])
+    accuracy_per_column.append(acc)
+    print(f"Kolumna {i}, Dokładność: {acc}")
+    print("Macierz pomyłek:\n", confusion_matrix(y_test[:, i], y_pred[:, i]))
+    print("Raport klasyfikacji:\n", classification_report(y_test[:, i], y_pred[:, i]))
+
+print("Dokładność per kolumna:", accuracy_per_column)
+
+#WERSJA Z PODSTAWOWĄ IMPLEMENTACJĄ RF
+# Trenowanie modelu z wielowyjściowymi etykietami
+#rf = RandomForestClassifier(random_state=42)
+#rf.fit(X_train, y_train)
+#y_pred = rf.predict(X_test)
+
+# Ocena modelu
+#accuracy_per_column = []
+#for i in range(y_test.shape[1]):
+#   acc = accuracy_score(y_test[:, i], y_pred[:, i])
+#   accuracy_per_column.append(acc)
+#    print(f"Kolumna {i}, Dokładność: {acc}")
+#    print("Macierz pomyłek:\n", confusion_matrix(y_test[:, i], y_pred[:, i]))
+#    print("Raport klasyfikacji:\n", classification_report(y_test[:, i], y_pred[:, i]))
+
+#print("Dokładność per kolumna:", accuracy_per_column)
